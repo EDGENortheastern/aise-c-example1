@@ -1,7 +1,9 @@
 import os
 
-from flask import Flask, render_template
+from flask import Flask, flash, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.exc import IntegrityError
+from werkzeug.security import generate_password_hash
 
 app = Flask(__name__)
 
@@ -12,6 +14,10 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
     "DATABASE_URL", "sqlite:///app.db"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Used to sign the session cookie so flash messages work. Override in
+# production with the SECRET_KEY environment variable.
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 
 db = SQLAlchemy(app)
 
@@ -43,6 +49,48 @@ def init_db_command():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        email = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+
+        # All fields are required.
+        if not username or not email or not password:
+            flash("Please fill in every field.", "error")
+            return render_template("register.html", username=username, email=email)
+
+        # Give a clear message if the username or email is already taken,
+        # rather than letting the database constraint raise an error.
+        existing = User.query.filter(
+            (User.username == username) | (User.email == email)
+        ).first()
+        if existing is not None:
+            flash("That username or email is already registered.", "error")
+            return render_template("register.html", username=username, email=email)
+
+        # Never store the raw password - hash it before saving.
+        user = User(
+            username=username,
+            email=email,
+            password_hash=generate_password_hash(password),
+        )
+        db.session.add(user)
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # Safety net if two people register the same details at once.
+            db.session.rollback()
+            flash("That username or email is already registered.", "error")
+            return render_template("register.html", username=username, email=email)
+
+        flash(f"Welcome, {username}! Your account has been created.", "success")
+        return redirect(url_for("index"))
+
+    return render_template("register.html")
 
 
 if __name__ == "__main__":
