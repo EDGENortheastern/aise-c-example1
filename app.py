@@ -46,6 +46,14 @@ def init_db_command():
     print("Initialized the database and created the tables.")
 
 
+# Create any missing tables on startup so the app works on a fresh database
+# (for example a new Postgres instance on Render, where gunicorn never runs
+# the init-db command above). create_all() only adds tables that don't
+# already exist, so this is safe to run on every boot.
+with app.app_context():
+    db.create_all()
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
