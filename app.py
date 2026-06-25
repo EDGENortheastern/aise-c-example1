@@ -1,9 +1,9 @@
 import os
 
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
-from werkzeug.security import generate_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 
@@ -91,6 +91,35 @@ def register():
         return redirect(url_for("index"))
 
     return render_template("register.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+
+        # Check the submitted details against the stored user.
+        user = User.query.filter_by(username=username).first()
+        if user is None or not check_password_hash(user.password_hash, password):
+            # Same message either way so we don't reveal which usernames exist.
+            flash("Invalid username or password.", "error")
+            return render_template("login.html", username=username)
+
+        # Keep the user logged in for the rest of the browser session.
+        session["user_id"] = user.id
+        session["username"] = user.username
+        flash(f"Welcome back, {user.username}!", "success")
+        return redirect(url_for("index"))
+
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("You have been logged out.", "success")
+    return redirect(url_for("index"))
 
 
 if __name__ == "__main__":
